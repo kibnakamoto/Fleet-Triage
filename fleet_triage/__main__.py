@@ -1,7 +1,12 @@
 import argparse
 import json
 
-from . import can, evaluate, simulator, triage
+from . import can, evaluate, replay, simulator, store, triage, viz
+
+
+def _load(path):
+    hyps, conn, sp = triage.analyze(can.read_candump(path))
+    return hyps, conn, sp, store.load_series(conn)
 
 
 def main(argv=None):
@@ -15,6 +20,12 @@ def main(argv=None):
     t = sub.add_parser("triage", help="analyze a candump log")
     t.add_argument("log")
     t.add_argument("--json", action="store_true")
+    r = sub.add_parser("replay", help="show the aligned state of every signal at a timestamp")
+    r.add_argument("log")
+    r.add_argument("--at", type=float, required=True, help="seconds from the start of the log")
+    p = sub.add_parser("report", help="write a self-contained HTML timeline")
+    p.add_argument("log")
+    p.add_argument("--html", default="timeline.html")
     e = sub.add_parser("evaluate", help="score against injected ground truth")
     e.add_argument("--runs", type=int, default=200)
     e.add_argument("--seed0", type=int, default=0)
@@ -28,12 +39,21 @@ def main(argv=None):
             json.dump(truth, f, indent=2)
         print(f"wrote {len(frames)} frames to {a.out} (truth: {a.out}.truth.json)")
     elif a.cmd == "triage":
-        hyps, conn, sp = triage.analyze(can.read_candump(a.log))
+        hyps, conn, sp, _ = _load(a.log)
         if a.json:
             print(json.dumps([{"category": h.category, "scope": h.scope, "t0": round(h.t0 - sp[0], 3),
                                "t1": round(h.t1 - sp[0], 3)} for h in hyps], indent=2))
         else:
             print(triage.render(hyps, conn, sp))
+    elif a.cmd == "replay":
+        hyps, _, sp, series = _load(a.log)
+        t_abs = sp[0] + a.at
+        print(replay.render(replay.snapshot(series, t_abs), replay.active(hyps, t_abs), a.at))
+    elif a.cmd == "report":
+        hyps, _, sp, series = _load(a.log)
+        with open(a.html, "w") as f:
+            f.write(viz.timeline_html(series, hyps, sp))
+        print(f"wrote {a.html}")
     else:
         seeds = range(a.seed0, a.seed0 + a.runs)
         tbl, _ = evaluate.table(evaluate.evaluate(seeds))

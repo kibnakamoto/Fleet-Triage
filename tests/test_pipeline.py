@@ -1,6 +1,6 @@
 import pytest
 
-from fleet_triage import can, evaluate, simulator, store, triage
+from fleet_triage import can, evaluate, replay, simulator, store, triage, viz
 from fleet_triage.signals import SIGNALS
 
 
@@ -79,3 +79,26 @@ def test_accuracy_floor_on_regression_seeds():
     _, (tp, fp, fn) = evaluate.table(stats)
     assert tp / (tp + fp) >= 0.90
     assert tp / (tp + fn) >= 0.88
+
+
+def _run(fault):
+    frames, _ = simulator.simulate(5, 120.0, [fault])
+    hyps, conn, sp = triage.analyze(frames)
+    return hyps, store.load_series(conn), sp
+
+
+def test_replay_snapshot_flags_stale_signal_and_active_fault():
+    hyps, series, _ = _run(simulator.Fault("dropout", 40.0, 62.0, signal="oil_pressure"))
+    mid = replay.snapshot(series, can.BASE_EPOCH + 50.0)
+    assert mid["oil_pressure"]["stale"] and not mid["engine_speed"]["stale"]
+    assert not replay.snapshot(series, can.BASE_EPOCH + 30.0)["oil_pressure"]["stale"]
+    assert any(h.category == "sensor_open" and h.scope == "oil_pressure"
+               for h in replay.active(hyps, can.BASE_EPOCH + 50.0))
+    assert not replay.active(hyps, can.BASE_EPOCH + 100.0)
+
+
+def test_html_timeline_is_deterministic_and_marks_faults():
+    hyps, series, sp = _run(simulator.Fault("noise", 40.0, 62.0, signal="engine_speed"))
+    page = viz.timeline_html(series, hyps, sp)
+    assert page == viz.timeline_html(series, hyps, sp)
+    assert "<svg" in page and "ground_noise" in page and page.count("<polyline") == len(SIGNALS)

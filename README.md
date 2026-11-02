@@ -11,6 +11,8 @@ No dependencies beyond Python 3.10+ (tests need `pytest`).
 ```bash
 python -m fleet_triage simulate --seed 3 --faults 2 --out run.candump
 python -m fleet_triage triage run.candump
+python -m fleet_triage replay run.candump --at 45      # aligned state of every signal at t = 45 s
+python -m fleet_triage report run.candump --html timeline.html   # self-contained timeline
 python -m fleet_triage evaluate --runs 200 --seed0 5000
 pytest
 ```
@@ -28,6 +30,11 @@ Signal health (from SQL view):
 2. ground_noise  [oil_pressure]  t=13.7s to 29.7s (16.0s)
    next: Signal is noisy: check ground and shield terminations, routing near high-current cables, supply ripple.
 ```
+
+## Replay and timeline
+
+- **`replay --at T`** reconstructs the time-synchronized state at any timestamp: the last known value of every signal, how old it is, whether it has gone stale, and which fault hypotheses are active. Same log in, same state out.
+- **`report --html`** writes one self-contained page: a plot per signal with the detected fault windows shaded and hover details, no server or dependencies needed.
 
 ## Results
 
